@@ -1,0 +1,113 @@
+/* General Styles */
+:root {
+  --primary-color: #4caf50;
+  --primary-hover-color: #45a049;
+  --text-color: #333;
+  --background-color: #f7f7f7;
+  --border-radius: 8px;
+  --transition-speed: 0.3s;
+}
+
+body {
+  font-family: 'Roboto', sans-serif;
+  background-color: var(--background-color);
+  color: var(--text-color);
+  margin: 0;
+  padding: 0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+}
+
+/* Container */
+.app-container {
+  max-width: 600px;
+  width: 90%;
+  margin: 2rem auto;
+  padding: 2rem;
+  background: white;
+  border-radius: var(--border-radius);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+  text-align: center;
+}
+
+/* Title */
+.app-title {
+  font-size: 1.8rem;
+  margin-bottom: 1.5rem;
+  color: var(--primary-color);
+}
+
+/* File Upload Section */
+.file-upload {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-bottom: 2rem;
+}
+
+.file-input {
+  display: none;
+}
+
+.file-label {
+  display: inline-block;
+  padding: 0.75rem 1.5rem;
+  border: 2px solid var(--primary-color);
+  background-color: white;
+  color: var(--text-color);
+  border-radius: var(--border-radius);
+  cursor: pointer;
+  transition: background-color var(--transition-speed), color var(--transition-speed);
+  margin-bottom: 1rem;
+}
+
+.file-label:hover {
+  background-color: var(--primary-color);
+  color: white;
+}
+
+.upload-button {
+  padding: 0.75rem 1.5rem;
+  background-color: var(--primary-color);
+  color: white;
+  border: none;
+  border-radius: var(--border-radius);
+  cursor: pointer;
+  transition: background-color var(--transition-speed);
+}
+
+.upload-button:disabled {
+  background-color: #ccc;
+  cursor: not-allowed;
+}
+
+.upload-button:hover:not(:disabled) {
+  background-color: var(--primary-hover-color);
+}
+
+/* Status and Download Section */
+.upload-status {
+  font-size: 1rem;
+  color: var(--primary-color);
+  margin-top: 1rem;
+}
+
+.download-section {
+  margin-top: 2rem;
+}
+
+.download-link {
+  display: inline-block;
+  padding: 0.75rem 1.5rem;
+  background-color: var(--primary-color);
+  color: white;
+  border-radius: var(--border-radius);
+  text-decoration: none;
+  transition: background-color var(--transition-speed);
+}
+
+.download-link:hover {
+  background-color: var(--primary-hover-color);
+}
