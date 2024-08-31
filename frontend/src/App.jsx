@@ -5,9 +5,11 @@ function App() {
     const [file, setFile] = useState(null);
     const [downloadLink, setDownloadLink] = useState(null);
     const [isUploading, setIsUploading] = useState(false);
+    const [isDownloading, setIsDownloading] = useState(false);
 
     const handleFileChange = (event) => {
         setFile(event.target.files[0]);
+        setDownloadLink(null);
     };
 
     const handleUpload = async () => {
@@ -30,6 +32,37 @@ function App() {
             console.error('Error uploading file:', error);
         } finally {
             setIsUploading(false);
+        }
+    };
+
+    const handleDownload = async () => {
+        if (!downloadLink) return;
+
+        setIsDownloading(true);
+
+        try {
+            const response = await fetch(`http://localhost:5000${downloadLink}`, {
+                method: 'GET',
+            });
+
+            if (response.ok) {
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.setAttribute('download', downloadLink.split('/').pop()); 
+                document.body.appendChild(link);
+                link.click();
+                link.parentNode.removeChild(link);
+                window.URL.revokeObjectURL(url); 
+            } else {
+                console.error('Failed to download file.');
+            }
+        } catch (error) {
+            console.error('Error downloading file:', error);
+        } finally {
+            setIsDownloading(false);
+            setDownloadLink(null); 
         }
     };
 
@@ -59,13 +92,14 @@ function App() {
             {isUploading && <div className="upload-status" aria-live="polite">Uploading your file...</div>}
             {downloadLink && (
                 <div className="download-section">
-                    <a
-                        href={`http://localhost:5000${downloadLink}`}
-                        download
-                        className="download-link"
+                    <button
+                        onClick={handleDownload}
+                        className="download-button"
+                        disabled={isDownloading}
+                        aria-label="Download Button"
                     >
-                        Download Processed File
-                    </a>
+                        {isDownloading ? 'Downloading...' : 'Download Processed File'}
+                    </button>
                 </div>
             )}
         </div>

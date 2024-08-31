@@ -1,65 +1,167 @@
+import dotenv from "dotenv";
+dotenv.config();
 import express from 'express';
 import multer from 'multer';
 import xlsx from 'xlsx';
 import path from 'path';
 import fs from 'fs';
 import cors from 'cors';
+import getColumnsForContract from './utils/get-columns-for-contract.js';
+import connectDB  from "./db/db.js"
+import PriceRate from "./model/PriceRate.js"
+// import convertLbAndOzToLb from "./utils/convert-lb-and-oz-to-lb.js"
 
 const app = express();
+connectDB();
 const PORT = 5000;
 
 const upload = multer({ dest: 'uploads/' });
 
-app.use(express.static('uploads'));
 app.use(cors("*"));
 
-app.post('/upload', upload.single('file'), (req, res) => {
+app.post('/upload', upload.single('file'), async (req, res) => {
     const file = req.file;
 
     if (!file) {
         return res.status(400).send('No file uploaded.');
     }
 
-    // Load the uploaded Excel file
     const workbook = xlsx.readFile(file.path);
-    const sheet = workbook.Sheets["Sheet1"];
-
-    // Convert the sheet to JSON
+    const sheet = workbook.Sheets["Zonified Merge"];
     const data = xlsx.utils.sheet_to_json(sheet);
 
-    // Create a new array to store the processed data
-    const processedData = data.map(row => ({
-        'Class Service': row['Class Service'],
-        'Weight': row['Weight'],
-        'Discounted Amount': "20%", // Add any additional processing here
-    }));
+    try {
+        const uniqueData = Array.from(
+            new Map(
+                data.map(row => [
+                    `${row["Class Service"]}-${row["weight_oz"]}-${row["zone"]}-${row["Amount Paid"]}`,
+                    row
+                ])
+            ).values()
+        );
 
-    // Sort the processed data by 'Class Service', then 'Weight', then 'Discounted Amount'
-    processedData.sort((a, b) => {
-        if (a['Class Service'] < b['Class Service']) return -1;
-        if (a['Class Service'] > b['Class Service']) return 1;
-        if (a['Weight'] < b['Weight']) return -1;
-        if (a['Weight'] > b['Weight']) return 1;
-        if (a['Discounted Amount'] < b['Discounted Amount']) return -1;
-        if (a['Discounted Amount'] > b['Discounted Amount']) return 1;
-        return 0;
+        console.log("uniqueData", uniqueData.length);
+
+        const processedData = await Promise.all(uniqueData.map(async (row) => {
+            let weight_lb = row["weight_oz"] ? row["weight_oz"] / 16 : row["Weight"];
+            weight_lb = parseInt(weight_lb);
+        
+            if (weight_lb === 0) {
+                weight_lb = 1;
+            }
+        
+            let zone = row["Zone"];
+            if (zone === 1) {
+                zone = 2;
+            }
+        
+            // Find the price rate based on the service, weight, and zone
+            let priceRate = null;
+            let price = null;
+        
+            if (weight_lb <= 150) {
+                priceRate = await PriceRate.findOne({
+                    "service.name": row["Class Service"],
+                    "Weight.minWeight": { $lte: weight_lb },
+                    "Weight.maxWeight": { $gte: weight_lb },
+                    "zones": zone
+                });
+        
+                // Check if priceRate was found
+                if (priceRate && priceRate.rate?.StartingPrice) {
+                    price = priceRate.rate.StartingPrice;
+                } else {
+                    console.warn(`PriceRate not found for ${row["Class Service"]}, Weight: ${weight_lb}, Zone: ${zone}`);
+                }
+            } else {
+                // Greater than 150 lbs
+                const zonesToPrice = {
+                    "2": 0.72,
+                    "3": 0.74,
+                    "4": 0.80,
+                    "5": 0.82,
+                    "6": 0.90,
+                    "7": 0.97,
+                    "8": 1.10,
+                    "44": 3.81,
+                    "45": 5.10,
+                    "46": 4.01
+                };
+        
+                price = zonesToPrice[zone] ? zonesToPrice[zone] * weight_lb : null;
+            }
+        
+            // Calculate the discount percentage only if the price is valid
+            let discountPercentage = 'N/A';
+            if (price && price > 0) {
+                const amountPaid = parseFloat(row["Amount Paid"]) * 2.5;
+                if (amountPaid > 0) {
+                    discountPercentage = ((amountPaid - price) / amountPaid) * 100;
+                    discountPercentage = discountPercentage.toFixed(2); // Convert to a fixed 2 decimal points
+                }
+            } else {
+                console.warn(`Invalid price for ${row["Class Service"]}, Weight: ${weight_lb}, Zone: ${zone}`);
+            }
+        
+            return {
+                "Class Service": row["Class Service"],
+                "Zone": zone,
+                "Weight (lb)": weight_lb,
+                "Original Amount Paid": parseFloat(row["Amount Paid"]),
+                "Discount Percentage": discountPercentage
+            };
+        }));
+        
+        // Aggregation logic
+        const aggregatedData = Object.values(processedData.reduce((acc, curr) => {
+            const key = `${curr["Class Service"]}-${curr["Zone"]}-${curr["Weight (lb)"]}`;
+            if (!acc[key]) {
+                acc[key] = { ...curr, count: 1 };
+            } else {
+                acc[key]["Original Amount Paid"] += curr["Original Amount Paid"];
+                    acc[key]["Discount Percentage"] += parseFloat(curr["Discount Percentage"]);
+                acc[key]["count"] += 1;
+            }
+            return acc;
+        }, {})).map(row => ({
+            "Class Service": row["Class Service"],
+            "Zone": row["Zone"],
+            "Weight (lb)": row["Weight (lb)"],
+            "Original Amount Paid": (row["Original Amount Paid"] / row.count).toFixed(2),
+            "Discount Percentage":  (row["Discount Percentage"] / row.count).toFixed(2) + '%'
+        }));
+        
+
+        const newSheet = xlsx.utils.json_to_sheet(aggregatedData);
+        xlsx.utils.book_append_sheet(workbook, newSheet, 'Processed Data');
+
+        const outputFilePath = path.join(path.resolve(), 'uploads', `processed_${file.originalname}`);
+        xlsx.writeFile(workbook, outputFilePath);
+
+        res.json({ filePath: `/download/${path.basename(outputFilePath)}` });
+
+        fs.unlinkSync(file.path);
+    } catch (error) {
+        console.error('Error processing the file:', error);
+        res.status(500).send('Error processing the file.');
+    }
+});
+
+
+
+app.get('/download/:filename', (req, res) => {
+    const filePath = path.join(path.resolve(), 'uploads', req.params.filename);
+
+    res.download(filePath, err => {
+        if (err) {
+            console.error('File download error:', err);
+            return res.status(500).send('File download failed.');
+        }
+
+        fs.unlink(filePath, (err) => {
+            if (err) console.error('Error deleting file:', err);
+        });
     });
-
-    // Create a new sheet from the sorted data
-    const newSheet = xlsx.utils.json_to_sheet(processedData);
-
-    // Append the new sheet to the existing workbook
-    xlsx.utils.book_append_sheet(workbook, newSheet, 'Processed Data');
-
-    // Save the updated workbook to a file
-    const outputFilePath = path.join(path.resolve(), 'uploads', `processed_${file.originalname}`);
-    xlsx.writeFile(workbook, outputFilePath);
-
-    // Send the new file path to the frontend
-    res.json({ filePath: `/processed_${file.originalname}` });
-
-    // Clean up uploaded file
-    fs.unlinkSync(file.path);
 });
 
 app.listen(PORT, () => {
