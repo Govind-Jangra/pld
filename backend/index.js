@@ -40,7 +40,6 @@ app.post('/upload', upload.single('file'), async (req, res) => {
             ).values()
         );
 
-        console.log("uniqueData", uniqueData.length);
 
         const processedData = await Promise.all(uniqueData.map(async (row) => {
             let weight_lb = row["weight_oz"] ? row["weight_oz"] / 16 : row["Weight"];
@@ -92,17 +91,21 @@ app.post('/upload', upload.single('file'), async (req, res) => {
             }
         
             // Calculate the discount percentage only if the price is valid
-            let discountPercentage = 'N/A';
+            let discountPercentage = 0;
             if (price && price > 0) {
-                const amountPaid = parseFloat(row["Amount Paid"]) * 2.5;
-                if (amountPaid > 0) {
+                const amountPaid = parseFloat(row["Amount Paid"]) * 2.7;
+                if (amountPaid > 0 &&   Boolean(price)) {
                     discountPercentage = ((amountPaid - price) / amountPaid) * 100;
-                    discountPercentage = discountPercentage.toFixed(2); // Convert to a fixed 2 decimal points
+                    discountPercentage = isNaN(discountPercentage) ? 0 : discountPercentage.toFixed(2); 
                 }
+                else{
+                    console.log("NAN")
+                    discountPercentage=0;
+                } 
             } else {
                 console.warn(`Invalid price for ${row["Class Service"]}, Weight: ${weight_lb}, Zone: ${zone}`);
             }
-        
+            
             return {
                 "Class Service": row["Class Service"],
                 "Zone": zone,
@@ -112,14 +115,22 @@ app.post('/upload', upload.single('file'), async (req, res) => {
             };
         }));
         
-        // Aggregation logic
         const aggregatedData = Object.values(processedData.reduce((acc, curr) => {
             const key = `${curr["Class Service"]}-${curr["Zone"]}-${curr["Weight (lb)"]}`;
             if (!acc[key]) {
-                acc[key] = { ...curr, count: 1 };
+                acc[key] = { 
+                    ...curr, 
+                    count: 1, 
+                    "Original Amount Paid": parseFloat(curr["Original Amount Paid"]), 
+                    "Discount Percentage": isNaN(parseFloat(curr["Discount Percentage"])) 
+                                           ? 0 
+                                           : parseFloat(curr["Discount Percentage"])
+                };
             } else {
-                acc[key]["Original Amount Paid"] += curr["Original Amount Paid"];
-                    acc[key]["Discount Percentage"] += parseFloat(curr["Discount Percentage"]);
+                acc[key]["Original Amount Paid"] += parseFloat(curr["Original Amount Paid"]);
+                acc[key]["Discount Percentage"] += isNaN(parseFloat(curr["Discount Percentage"])) 
+                                                   ? 0 
+                                                   : parseFloat(curr["Discount Percentage"]);
                 acc[key]["count"] += 1;
             }
             return acc;
@@ -131,6 +142,7 @@ app.post('/upload', upload.single('file'), async (req, res) => {
             "Discount Percentage":  (row["Discount Percentage"] / row.count).toFixed(2) + '%'
         }));
         
+        
 
         const newSheet = xlsx.utils.json_to_sheet(aggregatedData);
         xlsx.utils.book_append_sheet(workbook, newSheet, 'Processed Data');
@@ -138,7 +150,7 @@ app.post('/upload', upload.single('file'), async (req, res) => {
         const outputFilePath = path.join(path.resolve(), 'uploads', `processed_${file.originalname}`);
         xlsx.writeFile(workbook, outputFilePath);
 
-        res.json({ filePath: `/download/${path.basename(outputFilePath)}` });
+        res.json({ filePath: `/download/${path.basename(outputFilePath)}`,aggregatedData  });
 
         fs.unlinkSync(file.path);
     } catch (error) {
