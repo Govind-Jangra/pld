@@ -1,8 +1,19 @@
+
 .app-container {
   max-width: 800px;
   margin: 0 auto;
   padding: 20px;
   font-family: Arial, sans-serif;
+}
+
+@keyframes bg-animation {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+.animate-bg-animation {
+  animation: bg-animation 15s ease infinite;
 }
 
 .app-title {

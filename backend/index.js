@@ -160,7 +160,9 @@ app.post('/upload', upload.single('file'), async (req, res) => {
 });
 
 
-
+app.get("/healthcheck",(req,res)=>{
+    res.send("PLD is working")
+})
 app.get('/download/:filename', (req, res) => {
     const filePath = path.join(path.resolve(), 'uploads', req.params.filename);
 
